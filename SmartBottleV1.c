@@ -39,9 +39,11 @@
 //
 //			PIN CONFIGURATIONS
 //
-//	GPIO PORTF PIN 0 = LCD RS
-//	GPIO PORTE PIN 0 = LCD EN
-//	GPIO PORTB PIN7-0 = LCD D7-0
+//	GPIO PORTF PIN 	0 	= LCD RS
+//	GPIO PORTE PIN 	0 	= LCD EN
+//	GPIO PORTB PIN	7-0	= LCD D7-0
+//	GPIO PORTD PIN 	0 	= LOAD CELL DOUT
+//	GPIO PORTD PIN 	1 	= LOAD CELL CLK
 //
 //******************************************************************************
 
@@ -63,6 +65,9 @@
 //*****************************************************************************
 char inst = 'i';
 char data = 'd';
+int delay = 100000;
+int i, j;
+		
 void
 PortFunctionInit(void)
 {
@@ -71,30 +76,26 @@ PortFunctionInit(void)
     //
     MAP_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
     MAP_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
+		MAP_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOD);
     MAP_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF);
-
+		
+		//
+    // Enable pin PD0 for GPIOInput
     //
-    // Enable pin PB4 for GPIOOutput
+    MAP_GPIOPinTypeGPIOInput(GPIO_PORTD_BASE, GPIO_PIN_0);
+	
+		//
+    // Enable pin PD1 for GPIOOutput
     //
-    MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_4);
-
+    MAP_GPIOPinTypeGPIOOutput(GPIO_PORTD_BASE, GPIO_PIN_1);
+		
     //
     // Enable pin PB0 for GPIOOutput
     //
     MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_0);
-
-    //
-    // Enable pin PB6 for GPIOOutput
-    //
-    MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_6);
-
-    //
-    // Enable pin PB3 for GPIOOutput
-    //
-    MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_3);
-
-    //
-    // Enable pin PB1 for GPIOOutput
+    
+		//
+		// Enable pin PB1 for GPIOOutput
     //
     MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_1);
 
@@ -104,9 +105,24 @@ PortFunctionInit(void)
     MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_2);
 
     //
+    // Enable pin PB3 for GPIOOutput
+    //
+    MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_3);
+
+		//
+    // Enable pin PB4 for GPIOOutput
+    //
+    MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_4);
+
+    //
     // Enable pin PB5 for GPIOOutput
     //
     MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_5);
+		    
+		//
+    // Enable pin PB6 for GPIOOutput
+    //
+    MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_6);
 
     //
     // Enable pin PB7 for GPIOOutput
@@ -117,22 +133,19 @@ PortFunctionInit(void)
     // Enable pin PE0 for GPIOOutput
     //
     MAP_GPIOPinTypeGPIOOutput(GPIO_PORTE_BASE, GPIO_PIN_0);
-
-    //
-    // Enable pin PF0 for GPIOOutput
-    //
-
+		
     //
     //First open the lock and select the bits we want to modify in the GPIO commit register.
     //
     HWREG(GPIO_PORTF_BASE + GPIO_O_LOCK) = GPIO_LOCK_KEY;
     HWREG(GPIO_PORTF_BASE + GPIO_O_CR) = 0x1;
-
-    //
+	
+		//
     //Now modify the configuration of the pins that we unlocked.
     //
     MAP_GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE, GPIO_PIN_0);
 }
+
 
 //Globally enable interrupts 
 void IntGlobalEnable(void)
@@ -233,88 +246,146 @@ void lcd_rs(char c){
 }
 
 
-
 void lcd_clear(){
+		lcd_en(0x0);
 		lcd_rs(inst);
-		GPIO_PORTB_DATA_R = 0x01;
 		lcd_en(0x01);
+		GPIO_PORTB_DATA_R = 0x01;
+		SysCtlDelay(delay);
+		lcd_en(0x0);
+}
+void lcd_entryDefaultSet(){
+		lcd_en(0x0);
+		lcd_rs(inst);
+		lcd_en(0x01);
+		GPIO_PORTB_DATA_R = 0x01;
+		SysCtlDelay(delay);
+		lcd_en(0x0);
 }
 
-void lcd_chome(){
-		GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_0, 0x0);
-		GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_0, 0x1);
-		GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_1, 0x1);
-		GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_2, 0x0);
-		GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_3, 0x0);
-		GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_4, 0x0);
-		GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_5, 0x0);
-		GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_6, 0x0);
-		GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_7, 0x0);
-		GPIOPinWrite(GPIO_PORTE_BASE, GPIO_PIN_0, 0x1);
+void lcd_home(){
+		lcd_en(0x0);
+		lcd_rs(inst);
+		GPIO_PORTB_DATA_R = 0x02;
+		SysCtlDelay(delay);
+		lcd_en(0x1);
+}
+
+void lcd_displayOff(){
+		lcd_en(0x0);
+		lcd_rs(inst);
+		lcd_en(0x1);
+		GPIO_PORTB_DATA_R = 0x08;
+		SysCtlDelay(delay);
+		lcd_en(0x0);
 }
 
 void lcd_displayOn(){
-		GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_0, 0x0);
-		GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_0, 0x1);
-		GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_1, 0x1);
-		GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_2, 0x1);
-		GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_3, 0x1);
-		GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_4, 0x0);
-		GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_5, 0x0);
-		GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_6, 0x0);
-		GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_7, 0x0);
-		GPIOPinWrite(GPIO_PORTE_BASE, GPIO_PIN_0, 0x1);
+		lcd_en(0x0);
+		lcd_rs(inst);
+		lcd_en(0x1);
+		GPIO_PORTB_DATA_R = 0x0c;
+		SysCtlDelay(delay);
+		lcd_en(0x0);
+}
+
+void lcd_cursorOn(){
+		lcd_en(0x0);
+		lcd_rs(inst);
+		lcd_en(0x1);
+		GPIO_PORTB_DATA_R = 0x0f;
+		SysCtlDelay(delay);
+		lcd_en(0x0);
+}
+
+void lcd_cursorOff(){
+		lcd_en(0x0);
+		lcd_rs(inst);
+		lcd_en(0x1);
+		GPIO_PORTB_DATA_R = 0x12;
+		SysCtlDelay(delay);
+		lcd_en(0x0);
+}
+
+void lcd_shift(){
+		lcd_en(0x0);
+		lcd_rs(inst);
+		lcd_en(0x1);
+		GPIO_PORTB_DATA_R = 0x14;
+		SysCtlDelay(delay);
+		lcd_en(0x0);
 }
 
 void lcd_functionset(){
-		GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_0, 0x0);
-		GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_0, 0x0);
-		GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_1, 0x0);
-		GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_2, 0x0);
-		GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_3, 0x1);
-		GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_4, 0x1);
-		GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_5, 0x1);
-		GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_6, 0x0);
-		GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_7, 0x0);
-		GPIOPinWrite(GPIO_PORTE_BASE, GPIO_PIN_0, 0x1);
-	
+		lcd_en(0x0);
+		lcd_rs(inst);
+		GPIO_PORTB_DATA_R = 0x38; 
+		SysCtlDelay(delay);
+		lcd_en(0x1);
+		SysCtlDelay(delay);
+		lcd_en(0x0);
 }
 
-//INITIALIZE LCD
+void lcd_setAddr(int n){
+		lcd_en(0x0);
+		lcd_rs(inst);
+		lcd_en(0x1);
+		GPIO_PORTB_DATA_R = 0x80 + n;
+		SysCtlDelay(delay);
+		lcd_en(0x0);
+}
+
+void lcd_write(char c){
+		int ascii = c;
+		lcd_en(0x0);
+		lcd_rs(data);
+		lcd_en(0x1);
+		GPIO_PORTB_DATA_R = ascii;
+		SysCtlDelay(delay);
+		lcd_en(0x0);
+}
+void lcd_type(char arr[32]){
+		lcd_clear();
+		SysCtlDelay(delay);
+		lcd_home();
+		
+		for(i = 0; i < 32; i++){
+				if(i == 16 || arr[i] == '\n'){
+						lcd_setAddr(0x40);
+				}
+				
+				if(arr[i] != '\0'){
+						lcd_write(arr[i]);
+						break;
+				}
+		}
+		
+}
 void lcd_init(){
 		lcd_functionset();
-		SysCtlDelay(20000000);
-		lcd_functionset();
-		SysCtlDelay(20000000);
-		lcd_functionset();
-		SysCtlDelay(20000000);
-		
-		lcd_functionset();
-		lcd_clear();
-		SysCtlDelay(20000000);
-		
+		SysCtlDelay(delay);
+		lcd_entryDefaultSet();
+		SysCtlDelay(delay);
+		lcd_cursorOn();
+		SysCtlDelay(delay);
 }
-
-
 
 
 
 int main(void)
 {
-		unsigned long period = 8000000 * 2; //reload value to Timer0A to generate second delay
 		
 		//initialize the GPIO ports	
 		PortFunctionInit();
 		
-		//configure the GPIOF interrupt
-		Interrupt_Init();
-	
-		//initialize Timer0A and configure the interrupt
-		Timer0A_Init(period);
-		
 		lcd_init();
-
-		while(1){
+		SysCtlDelay(delay);
+	
+		GPIO_PORTB_DATA_R = 0xff;
+	
+		
+		while(1)
+    {
 			
-		}
+    }
 }
