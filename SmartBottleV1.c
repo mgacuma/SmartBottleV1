@@ -43,7 +43,7 @@
 //	GPIO PORTE PIN 	0 	= LCD EN
 //	GPIO PORTB PIN	7-0	= LCD D7-0
 //	GPIO PORTD PIN 	0 	= LOAD CELL DOUT
-//	GPIO PORTD PIN 	1 	= LOAD CELL CLK
+//	GPIO PORTD PIN 	2 	= LOAD CELL CLK
 //
 //******************************************************************************
 
@@ -65,9 +65,11 @@
 //*****************************************************************************
 char inst = 'i';
 char data = 'd';
-int delay = 100000;
+int delay = 26667;
 int i, j;
-		
+unsigned long mass = 0;
+char buffer[32];
+
 void
 PortFunctionInit(void)
 {
@@ -85,9 +87,9 @@ PortFunctionInit(void)
     MAP_GPIOPinTypeGPIOInput(GPIO_PORTD_BASE, GPIO_PIN_0);
 	
 		//
-    // Enable pin PD1 for GPIOOutput
+    // Enable pin PD2 for GPIOOutput
     //
-    MAP_GPIOPinTypeGPIOOutput(GPIO_PORTD_BASE, GPIO_PIN_1);
+    MAP_GPIOPinTypeGPIOOutput(GPIO_PORTD_BASE, GPIO_PIN_2);
 		
     //
     // Enable pin PB0 for GPIOOutput
@@ -170,39 +172,6 @@ Interrupt_Init(void)
   GPIO_PORTF_IEV_R &= ~0x11;  	// PF0 and PF4 falling edge event
 	IntGlobalEnable();        		// globally enable interrupt
 }
-
-//interrupt handler
-void GPIOPortF_Handler(void)
-{
-	
-	//switch debounce
-	NVIC_EN0_R &= ~0x40000000;
-	SysCtlDelay(53333); // Delay for a while
-	NVIC_EN0_R |= 0x40000000;
-
-/* EXAMPLE
-	//SW1 is pressed
-	if(GPIO_PORTF_RIS_R&0x10)
-	{
-		// acknowledge flag for PF4
-		GPIO_PORTF_ICR_R |= 0x10; 
-		//counter imcremented by 1
-		count++;
-		count = count & 7;
-	}
-	
-	//SW2 is pressed
-  if(GPIO_PORTF_RIS_R&0x01)
-	{
-		// acknowledge flag for PF0
-		GPIO_PORTF_ICR_R |= 0x01; 
-		//counter imcremented by 1
-		count--;
-		count = count & 7;
-	}
-*/
-}
-
 void Timer0A_Init(unsigned long period)
 {   
 	//
@@ -216,21 +185,6 @@ void Timer0A_Init(unsigned long period)
 	TimerIntEnable(TIMER0_BASE, TIMER_TIMA_TIMEOUT);      // arm timeout interrupt
   TimerEnable(TIMER0_BASE, TIMER_A);      // enable timer0A
 }
-
-//interrupt handler for Timer0A
-void Timer0A_Handler(void){
-	
-
-		// acknowledge flag for Timer0A timeout
-		TimerIntClear(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
-		
-	/* EXAMPLE
-		count++;
-		count = count & 7;*/
-}
-
-
-
 void lcd_en(int n){
 		GPIOPinWrite(GPIO_PORTE_BASE, GPIO_PIN_0, n);
 }
@@ -356,8 +310,8 @@ void lcd_type(char arr[32]){
 				
 				if(arr[i] != '\0'){
 						lcd_write(arr[i]);
-						break;
 				}
+				else break;
 		}
 		
 }
@@ -371,21 +325,88 @@ void lcd_init(){
 }
 
 
+void pulseUp(){
+		GPIO_PORTD_DATA_R |= 0x4;
+}
+
+void pulseDown(){
+		GPIO_PORTD_DATA_R &= ~0x4;
+}
+
+bool lc_checkStatus(){
+		bool status = false;
+		if(GPIOPinRead(GPIO_PORTD_BASE, GPIO_PIN_0) == 0x0){
+				status = true;
+		}
+		return status;
+}
+unsigned long lc_readMass(){
+		unsigned long count = 0;
+		
+		while(GPIOPinRead(GPIO_PORTD_BASE, GPIO_PIN_0) == 0x1){
+				lcd_type("not ready");
+				SysCtlDelay(10000);
+		}
+		
+		if(GPIOPinRead(GPIO_PORTD_BASE, GPIO_PIN_0) == 0x0){
+				for(i = 0; i < 24; i++){
+						pulseUp();
+						count = count << 1;
+						pulseDown();
+						if(GPIOPinRead(GPIO_PORTD_BASE, GPIO_PIN_0) == 1) count++;
+				}
+				
+				pulseUp();
+				count = count ^ 0x800000;
+				pulseDown();
+		}
+		
+		return(count);
+}
+
+void lc_showMass(unsigned long in){
+		unsigned int div = 0x800000;
+		for(i = 0; i < 24; i++){
+				if((in & div) == div){
+						buffer[i] = '1';
+				}
+				else buffer[i] = '0';
+				div = div / 0x02;
+		}
+		lcd_type(buffer);
+}
+
+//interrupt handler for Timer0A
+void Timer0A_Handler(void){
+	
+		// acknowledge flag for Timer0A timeout
+		TimerIntClear(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
+		
+		lc_showMass(lc_readMass());
+}
 
 int main(void)
 {
+		int secs = 1;
+		unsigned long period = secs * 10000000;
+		
+		SysCtlClockSet(SYSCTL_SYSDIV_20| SYSCTL_USE_PLL| SYSCTL_XTAL_16MHZ| SYSCTL_OSC_MAIN);
 		
 		//initialize the GPIO ports	
 		PortFunctionInit();
+		GPIO_PORTD_DATA_R &= 0x1;
+		SysCtlDelay(10000000);
 		
 		lcd_init();
 		SysCtlDelay(delay);
+		
+		lcd_type("Initializing...");	
+		SysCtlDelay(1000000);
 	
-		GPIO_PORTB_DATA_R = 0xff;
-	
+		Timer0A_Init(period);
+		
 		
 		while(1)
     {
-			
     }
 }
