@@ -32,9 +32,13 @@
 char inst = 'i';
 char data = 'd';
 int i, j;
-unsigned long mass = 0;
+float currentMass;
 char buffer[32];
-float calibrationFactor;
+float modulate = -0.00111991147068;
+float offset = 9769.96880117;
+float drank = 0;
+int time;
+
 
 void PortFunctionInit(void) {
 	//
@@ -66,7 +70,7 @@ void PortFunctionInit(void) {
 	// Enable pin PB3 for GPIOOutput
 	MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_3);
 
-	//Enable pin PB4 for GPIOOutput
+	// Enable pin PB4 for GPIOOutput
 	MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_4);
 
 	// Enable pin PB5 for GPIOOutput
@@ -127,8 +131,7 @@ void waitms(float ms) {
 	SysCtlDelay(del);
 }
 
-long uToL(uint32_t in) {
-	uint32_t div = 0x800000;
+long signd(uint32_t in) {
 	long out = 0x0 | in;
 	return out;
 }
@@ -136,8 +139,6 @@ long uToL(uint32_t in) {
 void lcd_en(int n) {
 	GPIOPinWrite(GPIO_PORTE_BASE, GPIO_PIN_0, n);
 }
-
-
 void lcd_rs(char c) {
 	if (c == 'i') {
 		GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_0, 0x0);
@@ -266,9 +267,8 @@ void lcd_init() {
 	waitms(1);
 	lcd_entryDefaultSet();
 	waitms(1);
-	lcd_cursorOn();
-	waitms(1);
 }
+
 void pulseUp() {
 	GPIOPinWrite(GPIO_PORTE_BASE, GPIO_PIN_3, GPIO_PIN_3);
 }
@@ -298,22 +298,23 @@ uint32_t hx_readMass() {
 
 	hx_reset();
 
-	while (!(hx_ready())) {
-	}
+	while (!(hx_ready())) {}
 
 	for (i = 0; i < 24; i++) {
 		pulse();
+		if (GPIOPinRead(GPIO_PORTE_BASE, GPIO_PIN_2) == GPIO_PIN_2) count++;
 		count = count << 1;
-		if (GPIOPinRead(GPIO_PORTE_BASE, GPIO_PIN_2) == GPIO_PIN_2) count = count + 1;
 	}
 
 	pulse();
 
-	count = count ^ 0x800000;
+	count ^= div;
 
+	/*
 	if ((count & div) == div) {
-		count = count | 0xFF800000;
+		count = count | 0xFF000000;
 	}
+	*/
 
 	IntGlobalEnable();
 	return count;
@@ -321,15 +322,13 @@ uint32_t hx_readMass() {
 
 void hx_showMass(uint32_t in) {
 	int mod = 10000000;
-	long conv = uToL(in);
-	i = 0;
+	long conv = signd(in);
 	uint32_t div = 0x80000000;
+	uint32_t div2 = 0x800000;
 
 	///*
-	if (conv < 0) {
+	if ((in & div) == div) {
 		buffer[0] = '-';
-		i++;
-		conv = ~conv + 1;
 	}
 	else buffer[0] = ' ';
 
@@ -342,12 +341,12 @@ void hx_showMass(uint32_t in) {
 	//*/
 
 	/*
-	for (i = 0; i < 32; i++) {
-		if ((conv & div) != 0) {
+	for (i = 0; i < 24; i++) {
+		if ((in & div2) != 0) {
 			buffer[i] = '1';
 		}
 		else buffer[i] = '0';
-		div = div >> 1;
+		div2 = div2 / 2;
 	}
 	lcd_type(buffer);
 	*/
@@ -365,18 +364,114 @@ void hx_showMass(uint32_t in) {
 	waitms(100);
 }
 
+uint32_t hx_findAvg() {
+	uint32_t avg[7];
+	uint32_t favg = hx_readMass();
+
+	for (i = 0; i < 7; i++) {
+		favg = (favg + hx_readMass()) / 2;
+	}
+
+	return favg;
+}
+
+float hx_findGrams(uint32_t in){
+	return (float)(modulate * in) + offset;
+}
+
+void printMenu(){
+	//H2O 10 Chars, start at 11
+	lcd_type("H2O Taken:                   ago");
+}
+
+void addTime(){
+	time++;
+}
+
+void printTime(){
+	int mins, secs;
+	char timeArr[5];
+	
+	mins = time / 60;
+	secs = time % 60;
+	
+	timeArr[0] = '0' + (mins / 10);
+	timeArr[1] = '0' + (mins % 10);
+	timeArr[2] = ':';
+	timeArr[3] = '0' + (secs / 10);
+	timeArr[4] = '0' + (secs % 10);
+	
+	lcd_home();
+	for(i = 0; i < 11; i++){
+		lcd_shiftRight();
+	}
+	for(i = 0; i < 5; i++){
+		lcd_write(timeArr[i]);
+	}
+}
+
+void printDrank(float in){
+	int integer = (int) in;
+	float fraction = in - integer;
+	char massArr[10];
+	massArr[4] = '.';
+	massArr[7] = ' ';
+	massArr[8] = 'm';
+	massArr[9] = 'L';
+	
+	if((integer / 1000)!= 0){
+		massArr[0] = '0' + integer / 1000;
+	}
+	else massArr[0] = ' ';
+	
+	if((integer % 1000 / 100)!= 0){
+		massArr[1] = '0' + integer % 1000 / 100;
+	}
+	else massArr[1] = ' ';
+	
+	if((integer % 100 / 10)!= 0){
+		massArr[2] = '0' + integer % 100 / 10;
+	}
+	else massArr[2] = ' ';
+	
+	massArr[3] = '0' + integer % 10;
+	
+	massArr[5] = '0' + (int) fraction * 10;
+	massArr[6] = '0' + (int) fraction * 100 % 10;
+	
+	lcd_home();
+	for(i = 0; i < 40; i++){
+		lcd_shiftRight();
+	}
+	for(i = 0; i < 10; i++){
+		lcd_write(massArr[i]);
+	}
+}
+
 //interrupt handler for Timer0A
 void Timer0A_Handler(void) {
-
-	hx_showMass(hx_readMass());
-
-	// acknowledge flag for Timer0A timeout
+	addTime();
+	printTime();
+	
+	float readMass = hx_findGrams(hx_findAvg());
+	
+	if((readMass - currentMass) > 20){
+		currentMass = readMass;
+	}
+		
+	else if((currentMass - readMass) > 20){
+		drank = drank + (currentMass - readMass);
+		currentMass = readMass;
+	}
+	
+	printDrank(currentMass);
+	
 	TimerIntClear(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
 }
 
 int main(void)
 {
-	int secs = 1;
+	float secs = 1;
 	unsigned long period = secs * 10000000;
 
 	SysCtlClockSet(SYSCTL_SYSDIV_20 | SYSCTL_USE_PLL | SYSCTL_XTAL_16MHZ | SYSCTL_OSC_MAIN);
@@ -389,8 +484,10 @@ int main(void)
 
 	lcd_type("Initializing...");
 	waitms(100);
-
+	
+	printMenu();
 	hx_reset();
+	
 	Timer0A_Init(period);
 
 	while (1)
