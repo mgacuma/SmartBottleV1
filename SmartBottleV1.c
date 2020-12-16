@@ -35,6 +35,8 @@ int i, j;
 unsigned long mass = 0;
 char buffer[32];
 float calibrationFactor;
+long offset;
+
 
 void PortFunctionInit(void) {
 	//
@@ -127,8 +129,7 @@ void waitms(float ms) {
 	SysCtlDelay(del);
 }
 
-long uToL(uint32_t in) {
-	uint32_t div = 0x800000;
+long signd(uint32_t in) {
 	long out = 0x0 | in;
 	return out;
 }
@@ -136,8 +137,6 @@ long uToL(uint32_t in) {
 void lcd_en(int n) {
 	GPIOPinWrite(GPIO_PORTE_BASE, GPIO_PIN_0, n);
 }
-
-
 void lcd_rs(char c) {
 	if (c == 'i') {
 		GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_0, 0x0);
@@ -298,22 +297,23 @@ uint32_t hx_readMass() {
 
 	hx_reset();
 
-	while (!(hx_ready())) {
-	}
+	while (!(hx_ready())) {}
 
 	for (i = 0; i < 24; i++) {
 		pulse();
+		if (GPIOPinRead(GPIO_PORTE_BASE, GPIO_PIN_2) == GPIO_PIN_2) count++;
 		count = count << 1;
-		if (GPIOPinRead(GPIO_PORTE_BASE, GPIO_PIN_2) == GPIO_PIN_2) count = count + 1;
 	}
 
 	pulse();
 
-	count = count ^ 0x800000;
+	count ^= div;
 
+	/*
 	if ((count & div) == div) {
-		count = count | 0xFF800000;
+		count = count | 0xFF000000;
 	}
+	*/
 
 	IntGlobalEnable();
 	return count;
@@ -321,15 +321,13 @@ uint32_t hx_readMass() {
 
 void hx_showMass(uint32_t in) {
 	int mod = 10000000;
-	long conv = uToL(in);
-	i = 0;
+	long conv = signd(in);
 	uint32_t div = 0x80000000;
+	uint32_t div2 = 0x800000;
 
 	///*
-	if (conv < 0) {
+	if ((in & div) == div) {
 		buffer[0] = '-';
-		i++;
-		conv = ~conv + 1;
 	}
 	else buffer[0] = ' ';
 
@@ -342,12 +340,12 @@ void hx_showMass(uint32_t in) {
 	//*/
 
 	/*
-	for (i = 0; i < 32; i++) {
-		if ((conv & div) != 0) {
+	for (i = 0; i < 24; i++) {
+		if ((in & div2) != 0) {
 			buffer[i] = '1';
 		}
 		else buffer[i] = '0';
-		div = div >> 1;
+		div2 = div2 / 2;
 	}
 	lcd_type(buffer);
 	*/
@@ -365,10 +363,26 @@ void hx_showMass(uint32_t in) {
 	waitms(100);
 }
 
+uint32_t hx_findAvg() {
+	uint32_t avg[7];
+	uint32_t favg = hx_readMass();
+
+	for (i = 0; i < 7; i++) {
+		favg = (favg + hx_readMass()) / 2;
+	}
+
+	return favg;
+}
+
+void hx_tare() {
+	double sum = hx_findAvg();
+
+}
+
 //interrupt handler for Timer0A
 void Timer0A_Handler(void) {
 
-	hx_showMass(hx_readMass());
+	hx_showMass(hx_findAvg());
 
 	// acknowledge flag for Timer0A timeout
 	TimerIntClear(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
@@ -376,7 +390,7 @@ void Timer0A_Handler(void) {
 
 int main(void)
 {
-	int secs = 1;
+	float secs = 1.5;
 	unsigned long period = secs * 10000000;
 
 	SysCtlClockSet(SYSCTL_SYSDIV_20 | SYSCTL_USE_PLL | SYSCTL_XTAL_16MHZ | SYSCTL_OSC_MAIN);
