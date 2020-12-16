@@ -42,8 +42,8 @@
 //	GPIO PORTF PIN 	0 	= LCD RS
 //	GPIO PORTE PIN 	0 	= LCD EN
 //	GPIO PORTB PIN	7-0	= LCD D7-0
-//	GPIO PORTD PIN 	0 	= LOAD CELL DOUT
-//	GPIO PORTD PIN 	2 	= LOAD CELL CLK
+//	GPIO PORTE PIN 	2 	= HX711 DATA
+//	GPIO PORTE PIN 	3 	= HX711 CLK
 //
 //******************************************************************************
 
@@ -65,348 +65,369 @@
 //*****************************************************************************
 char inst = 'i';
 char data = 'd';
-int delay = 26667;
 int i, j;
 unsigned long mass = 0;
 char buffer[32];
+float calibrationFactor;
 
-void
-PortFunctionInit(void)
-{
-    //
-    // Enable Peripheral Clocks 
-    //
-    MAP_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
-    MAP_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
-		MAP_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOD);
-    MAP_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF);
-		
-		//
-    // Enable pin PD0 for GPIOInput
-    //
-    MAP_GPIOPinTypeGPIOInput(GPIO_PORTD_BASE, GPIO_PIN_0);
-	
-		//
-    // Enable pin PD2 for GPIOOutput
-    //
-    MAP_GPIOPinTypeGPIOOutput(GPIO_PORTD_BASE, GPIO_PIN_2);
-		
-    //
-    // Enable pin PB0 for GPIOOutput
-    //
-    MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_0);
-    
-		//
-		// Enable pin PB1 for GPIOOutput
-    //
-    MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_1);
+void PortFunctionInit(void) {
+	//
+	// Enable Peripheral Clocks 
+	//
+	MAP_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
+	MAP_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
+	MAP_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF);
 
-    //
-    // Enable pin PB2 for GPIOOutput
-    //
-    MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_2);
 
-    //
-    // Enable pin PB3 for GPIOOutput
-    //
-    MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_3);
 
-		//
-    // Enable pin PB4 for GPIOOutput
-    //
-    MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_4);
+	//Enable pin PE2 for GPIOInput
+	MAP_GPIOPinTypeGPIOInput(GPIO_PORTE_BASE, GPIO_PIN_2);
 
-    //
-    // Enable pin PB5 for GPIOOutput
-    //
-    MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_5);
-		    
-		//
-    // Enable pin PB6 for GPIOOutput
-    //
-    MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_6);
 
-    //
-    // Enable pin PB7 for GPIOOutput
-    //
-    MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_7);
+	//Enable pin PE3 for GPIOOutput
+	MAP_GPIOPinTypeGPIOOutput(GPIO_PORTE_BASE, GPIO_PIN_3);
 
-    //
-    // Enable pin PE0 for GPIOOutput
-    //
-    MAP_GPIOPinTypeGPIOOutput(GPIO_PORTE_BASE, GPIO_PIN_0);
-		
-    //
-    //First open the lock and select the bits we want to modify in the GPIO commit register.
-    //
-    HWREG(GPIO_PORTF_BASE + GPIO_O_LOCK) = GPIO_LOCK_KEY;
-    HWREG(GPIO_PORTF_BASE + GPIO_O_CR) = 0x1;
-	
-		//
-    //Now modify the configuration of the pins that we unlocked.
-    //
-    MAP_GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE, GPIO_PIN_0);
+
+	// Enable pin PB0 for GPIOOutput
+	MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_0);
+
+	// Enable pin PB1 for GPIOOutput
+	MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_1);
+
+	// Enable pin PB2 for GPIOOutput
+	MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_2);
+
+	// Enable pin PB3 for GPIOOutput
+	MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_3);
+
+	//Enable pin PB4 for GPIOOutput
+	MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_4);
+
+	// Enable pin PB5 for GPIOOutput
+	MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_5);
+
+	// Enable pin PB6 for GPIOOutput
+	MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_6);
+
+	// Enable pin PB7 for GPIOOutput
+	MAP_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_7);
+
+
+	// Enable pin PE0 for GPIOOutput
+	MAP_GPIOPinTypeGPIOOutput(GPIO_PORTE_BASE, GPIO_PIN_0);
+
+	//First open the lock and select the bits we want to modify in the GPIO commit register.
+	HWREG(GPIO_PORTF_BASE + GPIO_O_LOCK) = GPIO_LOCK_KEY;
+	HWREG(GPIO_PORTF_BASE + GPIO_O_CR) = 0x1;
+
+	//Now modify the configuration of the pins that we unlocked.
+	MAP_GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE, GPIO_PIN_0);
 }
 
-
 //Globally enable interrupts 
-void IntGlobalEnable(void)
-{
-    __asm("    cpsie   i\n");
+void IntGlobalEnable(void) {
+	__asm("    cpsie   i\n");
 }
 
 //Globally disable interrupts 
-void IntGlobalDisable(void)
-{
-    __asm("    cpsid   i\n");
+void IntGlobalDisable(void) {
+	__asm("    cpsid   i\n");
 }
 
-void
-Interrupt_Init(void)
-{
-  NVIC_EN0_R |= 0x40000000;  		// enable interrupt 30 in NVIC (GPIOF)
+void Interrupt_Init(void) {
+	NVIC_EN0_R |= 0x40000000;  		// enable interrupt 30 in NVIC (GPIOF)
 	NVIC_PRI7_R &= 0x00E00000; 		// configure GPIOF interrupt priority as 0
 	GPIO_PORTF_IM_R |= 0x11;   		// arm interrupt on PF0 and PF4
 	GPIO_PORTF_IS_R &= ~0x11;     // PF0 and PF4 are edge-sensitive
-  GPIO_PORTF_IBE_R &= ~0x11;   	// PF0 and PF4 not both edges trigger 
-  GPIO_PORTF_IEV_R &= ~0x11;  	// PF0 and PF4 falling edge event
+	GPIO_PORTF_IBE_R &= ~0x11;   	// PF0 and PF4 not both edges trigger 
+	GPIO_PORTF_IEV_R &= ~0x11;  	// PF0 and PF4 falling edge event
 	IntGlobalEnable();        		// globally enable interrupt
 }
-void Timer0A_Init(unsigned long period)
-{   
+void Timer0A_Init(unsigned long period) {
 	//
   // Enable Peripheral Clocks 
   //
-  SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER0);
-  TimerConfigure(TIMER0_BASE, TIMER_CFG_PERIODIC); 		// configure for 32-bit timer mode
-  TimerLoadSet(TIMER0_BASE, TIMER_A, period -1);      //reload value
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER0);
+	TimerConfigure(TIMER0_BASE, TIMER_CFG_PERIODIC); 		// configure for 32-bit timer mode
+	TimerLoadSet(TIMER0_BASE, TIMER_A, period - 1);      //reload value
 	IntPrioritySet(INT_TIMER0A, 0x00);  	 // configure Timer0A interrupt priority as 0
-  IntEnable(INT_TIMER0A);    				// enable interrupt 19 in NVIC (Timer0A)
+	IntEnable(INT_TIMER0A);    				// enable interrupt 19 in NVIC (Timer0A)
 	TimerIntEnable(TIMER0_BASE, TIMER_TIMA_TIMEOUT);      // arm timeout interrupt
-  TimerEnable(TIMER0_BASE, TIMER_A);      // enable timer0A
+	TimerEnable(TIMER0_BASE, TIMER_A);      // enable timer0A
 }
-void lcd_en(int n){
-		GPIOPinWrite(GPIO_PORTE_BASE, GPIO_PIN_0, n);
+
+void waitms(float ms) {
+	float del = ((ms * 10000000) / 3) / 100;
+	SysCtlDelay(del);
+}
+
+long uToL(uint32_t in) {
+	uint32_t div = 0x800000;
+	long out = 0x0 | in;
+	return out;
+}
+
+void lcd_en(int n) {
+	GPIOPinWrite(GPIO_PORTE_BASE, GPIO_PIN_0, n);
 }
 
 
-void lcd_rs(char c){
-		if(c == 'i'){
-				GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_0, 0x0);
+void lcd_rs(char c) {
+	if (c == 'i') {
+		GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_0, 0x0);
+	}
+	else if (c == 'd') {
+		GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_0, 0x1);
+	}
+}
+void lcd_clear() {
+	lcd_en(0x0);
+	lcd_rs(inst);
+	lcd_en(0x01);
+	GPIO_PORTB_DATA_R = 0x01;
+	waitms(1);
+	lcd_en(0x0);
+}
+void lcd_entryDefaultSet() {
+	lcd_en(0x0);
+	lcd_rs(inst);
+	lcd_en(0x01);
+	GPIO_PORTB_DATA_R = 0x06;
+	waitms(1);
+	lcd_en(0x0);
+}
+void lcd_home() {
+	lcd_en(0x0);
+	lcd_rs(inst);
+	lcd_en(0x1);
+	GPIO_PORTB_DATA_R = 0x02;
+	waitms(1);
+	lcd_en(0x0);
+}
+void lcd_displayOff() {
+	lcd_en(0x0);
+	lcd_rs(inst);
+	lcd_en(0x1);
+	GPIO_PORTB_DATA_R = 0x08;
+	waitms(1);
+	lcd_en(0x0);
+}
+void lcd_displayOn() {
+	lcd_en(0x0);
+	lcd_rs(inst);
+	lcd_en(0x1);
+	GPIO_PORTB_DATA_R = 0x0c;
+	waitms(1);
+	lcd_en(0x0);
+}
+void lcd_cursorOn() {
+	lcd_en(0x0);
+	lcd_rs(inst);
+	lcd_en(0x1);
+	GPIO_PORTB_DATA_R = 0x0f;
+	waitms(1);
+	lcd_en(0x0);
+}
+void lcd_cursorOff() {
+	lcd_en(0x0);
+	lcd_rs(inst);
+	lcd_en(0x1);
+	GPIO_PORTB_DATA_R = 0xc;
+	waitms(1);
+	lcd_en(0x0);
+}
+void lcd_shiftRight() {
+	lcd_en(0x0);
+	lcd_rs(inst);
+	lcd_en(0x1);
+	GPIO_PORTB_DATA_R = 0x14;
+	waitms(1);
+	lcd_en(0x0);
+}
+void lcd_shiftLeft() {
+	lcd_en(0x0);
+	lcd_rs(inst);
+	lcd_en(0x1);
+	GPIO_PORTB_DATA_R = 0x16;
+	waitms(1);
+	lcd_en(0x0);
+}
+void lcd_functionset() {
+	lcd_en(0x0);
+	lcd_rs(inst);
+	GPIO_PORTB_DATA_R = 0x38;
+	waitms(1);
+	lcd_en(0x1);
+	waitms(1);
+	lcd_en(0x0);
+}
+void lcd_setAddr(int n) {
+	lcd_en(0x0);
+	lcd_rs(inst);
+	lcd_en(0x1);
+	GPIO_PORTB_DATA_R = 0x80 + n;
+	waitms(1);
+	lcd_en(0x0);
+}
+void lcd_write(char c) {
+	int ascii = c;
+	lcd_en(0x0);
+	lcd_rs(data);
+	lcd_en(0x1);
+	GPIO_PORTB_DATA_R = ascii;
+	waitms(1);
+	lcd_en(0x0);
+}
+void lcd_type(char arr[32]) {
+	lcd_clear();
+	waitms(1);
+	lcd_home();
+
+	for (i = 0; i < 32; i++) {
+		if (i == 16 || arr[i] == '\n') {
+			lcd_setAddr(0x40);
 		}
-		else if(c == 'd'){
-				GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_0, 0x1);
+
+		if (arr[i] != '\0') {
+			lcd_write(arr[i]);
 		}
+		else break;
+	}
+
+}
+void lcd_init() {
+	lcd_functionset();
+	waitms(1);
+	lcd_entryDefaultSet();
+	waitms(1);
+	lcd_cursorOn();
+	waitms(1);
+}
+void pulseUp() {
+	GPIOPinWrite(GPIO_PORTE_BASE, GPIO_PIN_3, GPIO_PIN_3);
+}
+void pulseDown() {
+	GPIOPinWrite(GPIO_PORTE_BASE, GPIO_PIN_3, 0x0);
+}
+void pulse() {
+	pulseUp();
+	pulseDown();
+}
+void hx_reset() {
+	pulseUp();
+	waitms(10);
+	pulseDown();
+}
+bool hx_ready() {
+	if (GPIOPinRead(GPIO_PORTE_BASE, GPIO_PIN_2) == 0x0) {
+		return true;
+	}
+	else return false;
 }
 
+uint32_t hx_readMass() {
+	IntGlobalDisable();
+	uint32_t count = 0;
+	uint32_t div = 0x800000;
 
-void lcd_clear(){
-		lcd_en(0x0);
-		lcd_rs(inst);
-		lcd_en(0x01);
-		GPIO_PORTB_DATA_R = 0x01;
-		SysCtlDelay(delay);
-		lcd_en(0x0);
-}
-void lcd_entryDefaultSet(){
-		lcd_en(0x0);
-		lcd_rs(inst);
-		lcd_en(0x01);
-		GPIO_PORTB_DATA_R = 0x01;
-		SysCtlDelay(delay);
-		lcd_en(0x0);
-}
+	hx_reset();
 
-void lcd_home(){
-		lcd_en(0x0);
-		lcd_rs(inst);
-		GPIO_PORTB_DATA_R = 0x02;
-		SysCtlDelay(delay);
-		lcd_en(0x1);
-}
+	while (!(hx_ready())) {
+	}
 
-void lcd_displayOff(){
-		lcd_en(0x0);
-		lcd_rs(inst);
-		lcd_en(0x1);
-		GPIO_PORTB_DATA_R = 0x08;
-		SysCtlDelay(delay);
-		lcd_en(0x0);
+	for (i = 0; i < 24; i++) {
+		pulse();
+		count = count << 1;
+		if (GPIOPinRead(GPIO_PORTE_BASE, GPIO_PIN_2) == GPIO_PIN_2) count = count + 1;
+	}
+
+	pulse();
+
+	count = count ^ 0x800000;
+
+	if ((count & div) == div) {
+		count = count | 0xFF800000;
+	}
+
+	IntGlobalEnable();
+	return count;
 }
 
-void lcd_displayOn(){
-		lcd_en(0x0);
-		lcd_rs(inst);
-		lcd_en(0x1);
-		GPIO_PORTB_DATA_R = 0x0c;
-		SysCtlDelay(delay);
-		lcd_en(0x0);
-}
+void hx_showMass(uint32_t in) {
+	int mod = 10000000;
+	long conv = uToL(in);
+	i = 0;
+	uint32_t div = 0x80000000;
 
-void lcd_cursorOn(){
-		lcd_en(0x0);
-		lcd_rs(inst);
-		lcd_en(0x1);
-		GPIO_PORTB_DATA_R = 0x0f;
-		SysCtlDelay(delay);
-		lcd_en(0x0);
-}
+	///*
+	if (conv < 0) {
+		buffer[0] = '-';
+		i++;
+		conv = ~conv + 1;
+	}
+	else buffer[0] = ' ';
 
-void lcd_cursorOff(){
-		lcd_en(0x0);
-		lcd_rs(inst);
-		lcd_en(0x1);
-		GPIO_PORTB_DATA_R = 0x12;
-		SysCtlDelay(delay);
-		lcd_en(0x0);
-}
+	for (i = 1; i < 8; i++) {
+		buffer[i] = '0' + (conv % mod) / (mod / 10);
+		mod = mod / 10;
+	}
+	buffer[8] = '\0';
+	lcd_type(buffer);
+	//*/
 
-void lcd_shift(){
-		lcd_en(0x0);
-		lcd_rs(inst);
-		lcd_en(0x1);
-		GPIO_PORTB_DATA_R = 0x14;
-		SysCtlDelay(delay);
-		lcd_en(0x0);
-}
-
-void lcd_functionset(){
-		lcd_en(0x0);
-		lcd_rs(inst);
-		GPIO_PORTB_DATA_R = 0x38; 
-		SysCtlDelay(delay);
-		lcd_en(0x1);
-		SysCtlDelay(delay);
-		lcd_en(0x0);
-}
-
-void lcd_setAddr(int n){
-		lcd_en(0x0);
-		lcd_rs(inst);
-		lcd_en(0x1);
-		GPIO_PORTB_DATA_R = 0x80 + n;
-		SysCtlDelay(delay);
-		lcd_en(0x0);
-}
-
-void lcd_write(char c){
-		int ascii = c;
-		lcd_en(0x0);
-		lcd_rs(data);
-		lcd_en(0x1);
-		GPIO_PORTB_DATA_R = ascii;
-		SysCtlDelay(delay);
-		lcd_en(0x0);
-}
-void lcd_type(char arr[32]){
-		lcd_clear();
-		SysCtlDelay(delay);
-		lcd_home();
-		
-		for(i = 0; i < 32; i++){
-				if(i == 16 || arr[i] == '\n'){
-						lcd_setAddr(0x40);
-				}
-				
-				if(arr[i] != '\0'){
-						lcd_write(arr[i]);
-				}
-				else break;
+	/*
+	for (i = 0; i < 32; i++) {
+		if ((conv & div) != 0) {
+			buffer[i] = '1';
 		}
-		
-}
-void lcd_init(){
-		lcd_functionset();
-		SysCtlDelay(delay);
-		lcd_entryDefaultSet();
-		SysCtlDelay(delay);
-		lcd_cursorOn();
-		SysCtlDelay(delay);
-}
+		else buffer[i] = '0';
+		div = div >> 1;
+	}
+	lcd_type(buffer);
+	*/
 
+	/*
+	if(in < 0){
+		lcd_type("negative");
+	}
+	else if (in > 0){
+		lcd_type("positive");
+	}
+	else lcd_type("zero");
+	*/
 
-void pulseUp(){
-		GPIO_PORTD_DATA_R |= 0x4;
-}
-
-void pulseDown(){
-		GPIO_PORTD_DATA_R &= ~0x4;
-}
-
-bool lc_checkStatus(){
-		bool status = false;
-		if(GPIOPinRead(GPIO_PORTD_BASE, GPIO_PIN_0) == 0x0){
-				status = true;
-		}
-		return status;
-}
-unsigned long lc_readMass(){
-		unsigned long count = 0;
-		
-		while(GPIOPinRead(GPIO_PORTD_BASE, GPIO_PIN_0) == 0x1){
-				lcd_type("not ready");
-				SysCtlDelay(10000);
-		}
-		
-		if(GPIOPinRead(GPIO_PORTD_BASE, GPIO_PIN_0) == 0x0){
-				for(i = 0; i < 24; i++){
-						pulseUp();
-						count = count << 1;
-						pulseDown();
-						if(GPIOPinRead(GPIO_PORTD_BASE, GPIO_PIN_0) == 1) count++;
-				}
-				
-				pulseUp();
-				count = count ^ 0x800000;
-				pulseDown();
-		}
-		
-		return(count);
-}
-
-void lc_showMass(unsigned long in){
-		unsigned int div = 0x800000;
-		for(i = 0; i < 24; i++){
-				if((in & div) == div){
-						buffer[i] = '1';
-				}
-				else buffer[i] = '0';
-				div = div / 0x02;
-		}
-		lcd_type(buffer);
+	waitms(100);
 }
 
 //interrupt handler for Timer0A
-void Timer0A_Handler(void){
-	
-		// acknowledge flag for Timer0A timeout
-		TimerIntClear(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
-		
-		lc_showMass(lc_readMass());
+void Timer0A_Handler(void) {
+
+	hx_showMass(hx_readMass());
+
+	// acknowledge flag for Timer0A timeout
+	TimerIntClear(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
 }
 
 int main(void)
 {
-		int secs = 1;
-		unsigned long period = secs * 10000000;
-		
-		SysCtlClockSet(SYSCTL_SYSDIV_20| SYSCTL_USE_PLL| SYSCTL_XTAL_16MHZ| SYSCTL_OSC_MAIN);
-		
-		//initialize the GPIO ports	
-		PortFunctionInit();
-		GPIO_PORTD_DATA_R &= 0x1;
-		SysCtlDelay(10000000);
-		
-		lcd_init();
-		SysCtlDelay(delay);
-		
-		lcd_type("Initializing...");	
-		SysCtlDelay(1000000);
-	
-		Timer0A_Init(period);
-		
-		
-		while(1)
-    {
-    }
+	int secs = 1;
+	unsigned long period = secs * 10000000;
+
+	SysCtlClockSet(SYSCTL_SYSDIV_20 | SYSCTL_USE_PLL | SYSCTL_XTAL_16MHZ | SYSCTL_OSC_MAIN);
+
+	//initialize the GPIO ports	
+	PortFunctionInit();
+
+	lcd_init();
+	waitms(100);
+
+	lcd_type("Initializing...");
+	waitms(100);
+
+	hx_reset();
+	Timer0A_Init(period);
+
+	while (1)
+	{
+	}
 }
