@@ -127,7 +127,7 @@ void Timer0A_Init(unsigned long period) {
 }
 
 void waitms(float ms) {
-	float del = ((ms * 10000000) / 3) / 100;
+	float del = ((ms * 10000000) / 3) / 1000;
 	SysCtlDelay(del);
 }
 
@@ -385,7 +385,11 @@ void printMenu(){
 }
 
 void addTime(){
-	time++;
+	time = time + 3;
+}
+
+void resetTime(){
+	time = 0;
 }
 
 void printTime(){
@@ -419,17 +423,17 @@ void printDrank(float in){
 	massArr[8] = 'm';
 	massArr[9] = 'L';
 	
-	if((integer / 1000)!= 0){
+	if((integer / 1000) >= 0){
 		massArr[0] = '0' + integer / 1000;
 	}
 	else massArr[0] = ' ';
 	
-	if((integer % 1000 / 100)!= 0){
+	if((integer % 1000 / 100) >= 0){
 		massArr[1] = '0' + integer % 1000 / 100;
 	}
 	else massArr[1] = ' ';
 	
-	if((integer % 100 / 10)!= 0){
+	if((integer % 100 / 10) >= 0){
 		massArr[2] = '0' + integer % 100 / 10;
 	}
 	else massArr[2] = ' ';
@@ -455,38 +459,52 @@ void Timer0A_Handler(void) {
 	
 	float readMass = hx_findGrams(hx_findAvg());
 	
-	if((readMass - currentMass) > 20){
-		currentMass = readMass;
-	}
-		
-	else if((currentMass - readMass) > 20){
-		drank = drank + (currentMass - readMass);
+	if(currentMass == 0){
 		currentMass = readMass;
 	}
 	
-	printDrank(currentMass);
+	
+	if(readMass < currentMass){
+		if(readMass < 20){
+		}
+		else if ((currentMass - readMass) > 5){
+			drank = drank + currentMass - readMass;
+			currentMass = readMass;
+			resetTime();
+		}
+	}
+		
+	else {
+		currentMass = readMass;
+	}
+	
+	printDrank(drank);
 	
 	TimerIntClear(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
 }
 
 int main(void)
 {
-	float secs = 1;
+	float secs = 5;
 	unsigned long period = secs * 10000000;
 
 	SysCtlClockSet(SYSCTL_SYSDIV_20 | SYSCTL_USE_PLL | SYSCTL_XTAL_16MHZ | SYSCTL_OSC_MAIN);
 
 	//initialize the GPIO ports	
 	PortFunctionInit();
-
+	
+	
 	lcd_init();
-	waitms(100);
+	waitms(1000);
+	
 
 	lcd_type("Initializing...");
 	waitms(100);
 	
 	printMenu();
 	hx_reset();
+	
+	
 	
 	Timer0A_Init(period);
 
